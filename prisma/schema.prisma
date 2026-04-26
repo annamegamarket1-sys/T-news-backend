@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique @db.VarChar(50)
+  passwordHash  String   @map("password_hash") @db.VarChar(255)
+  avatar        String?  @db.VarChar(500)
+  bio           String?
+  posts         Post[]
+  comments      Comment[]
+  likes         Like[]
+  followers     Follow[] @relation("follower")
+  following     Follow[] @relation("following")
+
+  @@map("users")
+}
+
+model Post {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  content   String
+  user      User      @relation(fields: [userId], references: [id])
+  comments  Comment[]
+  likes     Like[]
+
+  @@map("posts")
+}
+
+model Comment {
+  id      Int    @id @default(autoincrement())
+  postId  Int    @map("post_id")
+  userId  Int    @map("user_id")
+  content String
+  post    Post   @relation(fields: [postId], references: [id])
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@map("comments")
+}
+
+model Like {
+  postId Int @map("post_id")
+  userId Int @map("user_id")
+  post   Post @relation(fields: [postId], references: [id])
+  user   User @relation(fields: [userId], references: [id])
+
+  @@id([postId, userId])
+  @@map("likes")
+}
+
+model Follow {
+  followerId   Int @map("follower_id")
+  followingId  Int @map("following_id")
+  follower     User @relation("follower", fields: [followerId], references: [id])
+  following    User @relation("following", fields: [followingId], references: [id])
+
+  @@id([followerId, followingId])
+  @@map("follows")
+}
