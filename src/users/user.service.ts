@@ -3,13 +3,14 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import * as bcrypt from 'bcrypt';
-import * as fs from 'fs/promises';
-import { join } from 'path';
+import { UploadApiResponse } from 'cloudinary';
+import { cloudinary } from '../cloudinary';
 
 @Injectable()
 export class UsersService {
@@ -201,7 +202,7 @@ export class UsersService {
     return { message: 'User deleted' };
   }
 
-  async updateAvatar(id: number, avatarFilename: string) {
+  async updateAvatar(id: number, file: Express.Multer.File) {
     const user = await this.prisma.user.findUnique({
       where: { id },
     });
@@ -210,24 +211,12 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    if (user.avatar) {
-      try {
-        const oldAvatarPath = join(
-          process.cwd(),
-          'dist',
-          'public',
-          user.avatar,
-        );
-        await fs.unlink(oldAvatarPath);
-      } catch (error) {
-        console.warn(error.message);
-      }
-    }
+    const uploadedAvatar = await this.uploadAvatarToCloudinary(id, file);
 
     const updatedUser = await this.prisma.user.update({
       where: { id },
       data: {
-        avatar: avatarFilename,
+        avatar: uploadedAvatar.secure_url,
       },
       select: {
         id: true,
@@ -238,5 +227,39 @@ export class UsersService {
     });
     
     return updatedUser;
+  }
+
+  private async uploadAvatarToCloudinary(
+    userId: number,
+    file: Express.Multer.File,
+  ): Promise<UploadApiResponse> {
+    if (!process.env.CLOUDINARY_CLOUD_NAME) {
+      throw new InternalServerErrorException(
+        'Cloudinary is not configured on the server',
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 't-news/avatars',
+          public_id: `avatar_${userId}_${Date.now()}`,
+          resource_type: 'image',
+          overwrite: true,
+        },
+        (error, result) => {
+          if (error || !result) {
+            reject(
+              new InternalServerErrorException('Avatar upload to Cloudinary failed'),
+            );
+            return;
+          }
+
+          resolve(result);
+        },
+      );
+
+      uploadStream.end(file.buffer);
+    });
   }
 }
